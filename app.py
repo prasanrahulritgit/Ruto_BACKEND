@@ -11,7 +11,6 @@ from flask_migrate import Migrate
 from models import db, User
 from datetime import datetime
 from werkzeug.security import generate_password_hash
-from flask_wtf.csrf import CSRFProtect, generate_csrf
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 import os
@@ -32,7 +31,6 @@ def create_app():
     # Configure CORS
     CORS(app, resources={
         r"/api/*": {"origins": "*"},
-        r"/get-csrf": {"origins": "*"},
         r"/login": {"origins": "*"}
     }, supports_credentials=True)
     
@@ -41,7 +39,6 @@ def create_app():
     login_manager = LoginManager(app)
     login_manager.login_view = 'auth.login'
     migrate = Migrate(app, db)
-    csrf = CSRFProtect(app)
     load_dotenv() 
     
     # Register blueprints
