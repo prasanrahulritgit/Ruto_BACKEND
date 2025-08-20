@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Usage History</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='CSS/history.css') }}">
+   
+</head>
+<body>
+    <div class="container-fluid py-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="h3 mb-0">Device Usage History</h1>
+            <div>
+                <a href="{{ url_for('reservation.view_reservations') }}" class="btn blue-btn me-2">
+                    View Reservations
+                </a>
+                {% if current_user.role == 'admin' %}
+                <button class="btn orange-btn" id="clearHistoryBtn">
+                    Clear Old Records
+                </button>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="filter-container">
+            <form id="filterForm" class="row g-3">
+                <div class="col-md-3">
+                    <label for="deviceFilter" class="form-label">Device</label>
+                    <select id="deviceFilter" class="form-select">
+                        <option value="">All Devices</option>
+                        {% for device in devices %}
+                        <option value="{{ device.device_id }}">{{ device.device_name }} ({{ device.device_id }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="statusFilter" class="form-label">Status</label>
+                    <select id="statusFilter" class="form-select">
+                        <option value="">All Statuses</option>
+                        <option value="active">Active</option>
+                        <option value="completed">Completed</option>
+                        <option value="terminated">Terminated</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="dateFrom" class="form-label">From Date</label>
+                    <input type="date" class="form-control" id="dateFrom">
+                </div>
+                <div class="col-md-2">
+                    <label for="dateTo" class="form-label">To Date</label>
+                    <input type="date" class="form-control" id="dateTo">
+                </div>
+            </form>
+        </div>
+
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table id="historyTable" class="table table-striped table-hover" style="width:100%">
+                        <thead>
+                            <tr>
+                                <th>Device</th>
+                                <th>Start Time</th>
+                                <th>End Time</th>
+                                <th>Duration</th>
+                                <th>Status</th>
+                                <th>IP Type</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for record in history_records %}
+                            <tr>
+                                <td class="td">
+                                    <strong>{{ record.device.device_name }}</strong>
+                                    <div class="text-muted small">{{ record.device_id }}</div>
+                                </td>
+                            
+                                <td class="td">{{ record.actual_start_time.strftime('%Y-%m-%d %H:%M') }}</td>
+                                <td class="td">
+                                    {% if record.actual_end_time %}
+                                        {{ record.actual_end_time.strftime('%Y-%m-%d %H:%M') }}
+                                    {% else %}
+                                        <em>In Progress</em>
+                                    {% endif %}
+                                </td>
+                                <td class=" td duration-cell">
+                                    {% if record.duration %}
+                                        {{ (record.duration // 3600) }}h {{ ((record.duration % 3600) // 60) }}m
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td class="td">
+                                    {% if record.status == 'active' %}
+                                        <span class="badge active-badge status-badge">Active</span>
+                                    {% elif record.status == 'completed' %}
+                                        <span class="badge completed-badge status-badge">Completed</span>
+                                    {% else %}
+                                        <span class="badge terminated-badge status-badge">Terminated</span>
+                                    {% endif %}
+                                </td>
+                                <td class="td">{{ record.ip_type }}</td>
+                                <td class="td">
+                                    <button class="btn btn-sm view-details blue-btn" 
+                                            data-record-id="{{ record.id }}">
+                                        Details
+                                    </button>
+                                    {% if current_user.role == 'admin' %}
+                                    <button class="btn btn-sm delete-record orange-btn" 
+                                            data-record-id="{{ record.id }}">
+                                        Delete
+                                    </button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Details Modal -->
+    <div class="modal fade" id="detailsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Usage Record Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="recordDetails">
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="sr-only">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading record details...</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script src="{{ url_for('static', filename='js/history.js') }}"></script>
+   
+</body>
+</html>
+{% endblock %}

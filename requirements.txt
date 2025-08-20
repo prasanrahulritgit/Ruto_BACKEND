@@ -1,0 +1,16 @@
+flask
+flask-sqlalchemy
+flask-cors
+Flask-Login
+Flask-WTF
+WTForms
+Werkzeug
+Jinja2
+python-dotenv
+email-validator
+Flask-Migrate
+apscheduler
+pytz
+flask-jwt-extended
+pyjwt
+cryptography
