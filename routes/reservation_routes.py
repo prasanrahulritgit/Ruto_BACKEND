@@ -34,7 +34,6 @@ def make_naive(utc_dt):
 
 
 @reservation_bp.route('/api/devices/availability', methods=['GET'])
-@login_required
 def get_devices_with_availability():
     """Get all devices with availability status for a given time range"""
     try:
@@ -96,7 +95,6 @@ def get_devices_with_availability():
 
 
 @reservation_bp.route('/dashboard')
-@login_required
 def dashboard():
     # Delete ALL expired reservations (not just current user's)
     expired_count = Reservation.delete_expired()
@@ -138,7 +136,6 @@ def dashboard():
     )
 
 @reservation_bp.route('/reservations')
-@login_required
 def view_reservations():
     """Endpoint specifically for viewing reservations (for both admins and regular users)"""
     # Delete expired reservations
@@ -190,7 +187,6 @@ def view_reservations():
     )
 
 @reservation_bp.route('/api/devices', methods=['GET'])
-@login_required
 def get_devices():
     try:
         devices = Device.query.all()
@@ -326,7 +322,6 @@ def get_booked_devices():
     
 
 @reservation_bp.route('/api/reservations', methods=['GET'])
-@login_required
 def get_reservations():
     """Get all reservations with filtering options"""
     try:
@@ -429,12 +424,14 @@ def get_reservations():
         }), 500
     
 
-    
 @reservation_bp.route('/api/reservations', methods=['POST'])
 @login_required
 def create_reservation():
     """Create a new reservation"""
     try:
+        # Debug: Check if user is authenticated
+        current_app.logger.info(f"Current user: {current_user.id if current_user.is_authenticated else 'Anonymous'}")
+        
         data = request.get_json()
         
         # Validate required fields
@@ -494,7 +491,8 @@ def create_reservation():
         conflict = Reservation.query.filter(
             Reservation.device_id == data['device_id'],
             Reservation.start_time < end_time.replace(tzinfo=None),
-            Reservation.end_time > start_time.replace(tzinfo=None)
+            Reservation.end_time > start_time.replace(tzinfo=None),
+            Reservation.status != 'cancelled'
         ).first()
         
         if conflict:
@@ -503,7 +501,7 @@ def create_reservation():
                 'message': 'Device already reserved for this time period'
             }), 409
             
-        # Create reservation
+        # Create reservation - use current_user.id from Flask-Login
         reservation = Reservation(
             device_id=data['device_id'],
             user_id=current_user.id,
@@ -546,6 +544,7 @@ def create_reservation():
                 'device': device_info,
                 'user': {
                     'id': current_user.id,
+                    'name': current_user.user_name
                 },
                 'time': {
                     'start': start_ist.isoformat(),
@@ -557,7 +556,6 @@ def create_reservation():
             }
         }
 
-        
         return Response(
             json.dumps(response, ensure_ascii=False, sort_keys=False),
             mimetype='application/json'
@@ -572,9 +570,7 @@ def create_reservation():
         }), 500
 
 
-
 @reservation_bp.route('/reservation/cancel/<int:reservation_id>', methods=['POST'])
-@login_required
 def cancel_reservation(reservation_id):
     reservation = Reservation.query.get_or_404(reservation_id)
     
@@ -618,9 +614,16 @@ def cancel_reservation(reservation_id):
 
 
 @reservation_bp.route('/api/user-reservations', methods=['GET'])
-@login_required
 def get_user_reservations():
     """Get all reservations with user details and IP information"""
+    # If this is an API request and user is not authenticated, return JSON error
+    if not current_user.is_authenticated:
+        return jsonify({
+            'success': False,
+            'message': 'Authentication required',
+            'login_url': url_for('auth.login', _external=True)
+        }), 401
+    
     try:
         # Get query parameters
         show_expired = request.args.get('show_expired', 'false').lower() == 'true'
@@ -631,7 +634,7 @@ def get_user_reservations():
         ist = pytz.timezone('Asia/Kolkata')
         current_time = datetime.now(ist)
         
-        # Base query with joins
+        # Base query with joins - only show current user's reservations unless admin
         query = db.session.query(
             Reservation,
             User,
@@ -640,9 +643,13 @@ def get_user_reservations():
             User, Reservation.user_id == User.id
         ).join(
             Device, Reservation.device_id == Device.device_id
-        ).order_by(
-            Reservation.start_time.asc()
         )
+        
+        # Regular users can only see their own reservations
+        if current_user.role != 'admin':
+            query = query.filter(Reservation.user_id == current_user.id)
+        
+        query = query.order_by(Reservation.start_time.asc())
         
         # Apply filters
         if not show_expired:
@@ -651,7 +658,7 @@ def get_user_reservations():
         if device_id:
             query = query.filter(Reservation.device_id == device_id)
             
-        if user_id:
+        if user_id and current_user.role == 'admin':
             query = query.filter(Reservation.user_id == user_id)
         
         # Execute query
@@ -660,35 +667,25 @@ def get_user_reservations():
         # Format response
         reservations = []
         for reservation, user, device in results:
-            # Get device IP based on reservation type
-            ip_mapping = {
-                'pc': device.PC_IP,
-                'rutomatrix': device.Rutomatrix_ip,
-                'pulse1': device.Pulse1_Ip,
-                'ct1': device.CT1_ip,
+            # Return all available IP addresses for the device
+            device_ips = {
+                'pc_ip': device.PC_IP,
+                'rutomatrix_ip': device.Rutomatrix_ip,
+                'pulse1_ip': device.Pulse1_Ip,
+                'ct1_ip': device.CT1_ip,
             }
             
-            # Determine which IP to use based on reservation type
-            ip_type = reservation.ip_type.lower()
-            device_ip = None
-            
-            if 'pc' in ip_type:
-                device_ip = ip_mapping['pc']
-            elif 'rutomatrix' in ip_type:
-                device_ip = ip_mapping['rutomatrix']
-            elif 'pulse1' in ip_type:
-                device_ip = ip_mapping['pulse1']
-            elif 'ct1' in ip_type:
-                device_ip = ip_mapping['ct1']
+            # Filter out None values
+            device_ips = {k: v for k, v in device_ips.items() if v is not None}
             
             reservations.append({
                 'reservation_id': reservation.id,
                 'device_id': reservation.device_id,
-                'device_name': device.device_id,  # Assuming device_id is the name
+                'device_name': device.device_id,
                 'user_id': user.id,
+                'user_name': user.user_name,
                 'user_ip': user.user_ip,
-                'device_ip': device_ip,
-                'ip_type': reservation.ip_type,
+                'device_ips': device_ips,  # Return all IPs
                 'start_time': reservation.start_time.astimezone(ist).isoformat(),
                 'end_time': reservation.end_time.astimezone(ist).isoformat(),
                 'status': reservation.status,
@@ -715,7 +712,6 @@ def get_user_reservations():
             'message': 'Failed to fetch reservations',
             'error': str(e)
         }), 500
-    
 
 @reservation_bp.route('/api/user-reservations/<int:user_id>', methods=['GET'])
 @login_required
@@ -723,7 +719,12 @@ def get_user_reservation_details(user_id):
     """Get all reservation details for a specific user"""
     try:
         # Verify the requesting user has permission
-        
+        # Admins can view any user, regular users can only view themselves
+        if current_user.role != 'admin' and current_user.id != user_id:
+            return jsonify({
+                'success': False,
+                'message': 'Unauthorized to view this user\'s reservations'
+            }), 403
 
         # Get the user
         user = User.query.get_or_404(user_id)
@@ -747,31 +748,29 @@ def get_user_reservation_details(user_id):
         # Format the response
         result = {
             'user_id': user.id,
+            'user_name': user.user_name,
             'user_ip': user.user_ip,
             'role': user.role,
             'reservations': []
         }
 
         for reservation, device in reservations:
-            # Determine which device IP to include based on reservation type
-            ip_type = reservation.ip_type.lower()
-            device_ip = None
-
-            if 'pc' in ip_type:
-                device_ip = device.PC_IP
-            elif 'rutomatrix' in ip_type:
-                device_ip = device.Rutomatrix_ip
-            elif 'pulse1' in ip_type:
-                device_ip = device.Pulse1_Ip
-            elif 'ct1' in ip_type:
-                device_ip = device.CT1_ip
-
+            # Return all available IP addresses for the device
+            device_ips = {
+                'pc_ip': device.PC_IP,
+                'rutomatrix_ip': device.Rutomatrix_ip,
+                'pulse1_ip': device.Pulse1_Ip,
+                'ct1_ip': device.CT1_ip,
+            }
+            
+            # Filter out None values
+            device_ips = {k: v for k, v in device_ips.items() if v is not None}
+            
             result['reservations'].append({
                 'reservation_id': reservation.id,
                 'device_id': device.device_id,
-                'device_name': device.device_id,  # Assuming device_id is the name
-                'ip_type': reservation.ip_type,
-                'device_ip': device_ip,
+                'device_name': device.device_id,
+                'device_ips': device_ips,  # Return all IP addresses
                 'start_time': reservation.start_time.astimezone(ist).isoformat(),
                 'end_time': reservation.end_time.astimezone(ist).isoformat(),
                 'status': reservation.status,
@@ -793,7 +792,6 @@ def get_user_reservation_details(user_id):
             'error': str(e)
         }), 500
 
-    
 @reservation_bp.route('/api/user-reservations/<int:user_id>/time-filter', methods=['GET'])
 @login_required
 def get_user_reservations_with_time(user_id):
@@ -852,6 +850,7 @@ def get_user_reservations_with_time(user_id):
         # Format response
         result = {
             'user_id': user.id,
+            'user_name': user.user_name,
             'user_ip': user.user_ip,
             'timezone': timezone,
             'current_time': current_time.isoformat(),
@@ -863,19 +862,16 @@ def get_user_reservations_with_time(user_id):
         }
 
         for reservation, device in reservations:
-            # Get device IP based on reservation type
-            ip_mapping = {
-                'pc': device.PC_IP,
-                'rutomatrix': device.Rutomatrix_ip,
-                'pulse1': device.Pulse1_Ip,
-                'ct1': device.CT1_ip,
+            # Return all available IP addresses for the device
+            device_ips = {
+                'pc_ip': device.PC_IP,
+                'rutomatrix_ip': device.Rutomatrix_ip,
+                'pulse1_ip': device.Pulse1_Ip,
+                'ct1_ip': device.CT1_ip,
             }
             
-            ip_type = reservation.ip_type.lower()
-            device_ip = next(
-                (ip_mapping[key] for key in ip_mapping if key in ip_type),
-                None
-            )
+            # Filter out None values
+            device_ips = {k: v for k, v in device_ips.items() if v is not None}
 
             # Convert times to requested timezone
             start_local = reservation.start_time.replace(tzinfo=pytz.UTC).astimezone(tz)
@@ -885,8 +881,7 @@ def get_user_reservations_with_time(user_id):
                 'reservation_id': reservation.id,
                 'device_id': device.device_id,
                 'device_name': device.device_id,
-                'ip_type': reservation.ip_type,
-                'device_ip': device_ip,
+                'device_ips': device_ips,  # Return all IP addresses
                 'start_time': start_local.isoformat(),
                 'end_time': end_local.isoformat(),
                 'duration_minutes': int((end_local - start_local).total_seconds() / 60),
