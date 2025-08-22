@@ -1,16 +1,41 @@
-from datetime import datetime
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
-from flask_login import current_user, login_user, logout_user, login_required
+from datetime import timedelta
+from flask import Blueprint, request, jsonify, make_response, session
+from flask_login import current_user, login_user, logout_user
+from flask_cors import cross_origin
 from models.user import User
-from models.base import db
-from werkzeug.security import check_password_hash, generate_password_hash
-from forms import LoginForm
-from flask_wtf.csrf import generate_csrf
+from werkzeug.security import check_password_hash
 
 auth_bp = Blueprint('auth', __name__)
 
-@auth_bp.route('/login', methods=['POST'])
+@auth_bp.route('/debug/session', methods=['GET'])
+def debug_session():
+    """Debug route to check session status"""
+    response_data = {
+        'is_authenticated': current_user.is_authenticated,
+        'user_id': current_user.id if current_user.is_authenticated else None,
+        'username': current_user.user_name if current_user.is_authenticated else None,
+        'session_keys': list(session.keys()) if hasattr(session, 'keys') else [],
+        'request_headers': dict(request.headers),
+        'request_cookies': dict(request.cookies)
+    }
+    
+    response = jsonify(response_data)
+    response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
+
+
+@auth_bp.route('/login', methods=['POST', 'OPTIONS'])
 def login():
+    if request.method == 'OPTIONS':
+        # Handle preflight request
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+    
     # Expect JSON data from React frontend
     if not request.is_json:
         return jsonify({
@@ -33,22 +58,22 @@ def login():
     user = User.query.filter_by(user_name=username).first()
     
     if user and check_password_hash(user.password_hash, password):
-        login_user(user)
+        login_user(user, remember=True)
         
-        # Determine redirect URL based on user role
-        if user.role == 'admin':
-            redirect_url = 'http://localhost:3000/admin_dashboard'
-        else:
-            redirect_url = 'http://localhost:3000/user_reservation'
-        
-        return jsonify({
+        # Create response with user data
+        response = jsonify({
             'success': True,
             'message': 'Logged in successfully!',
-            'redirect': redirect_url,
             'user_role': user.role,
             'user_id': user.id,
             'username': user.user_name
         })
+        
+        # Set CORS headers
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        
+        return response
     
     # Authentication failed
     return jsonify({
@@ -57,19 +82,8 @@ def login():
     }), 401
 
 
-@auth_bp.route('/logout', methods=['POST'])
-def logout():
-    logout_user()
-    
-    return jsonify({
-        'success': True,
-        'message': 'Logged out successfully',
-        'redirect': 'http://localhost:3000/login'
-    })
-
-
-@auth_bp.route('/user_status', methods=['GET'])
-def user_status():
+@auth_bp.route('/api/check-auth', methods=['GET'])
+def check_auth():
     if current_user.is_authenticated:
         return jsonify({
             'authenticated': True,
@@ -80,4 +94,57 @@ def user_status():
             }
         })
     else:
-        return jsonify({'authenticated': False})
+        return jsonify({'authenticated': False}), 401
+
+
+@auth_bp.route('/logout', methods=['POST', 'OPTIONS'])
+def logout():
+    if request.method == 'OPTIONS':
+        # Handle preflight request
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+    
+    logout_user()
+    
+    response = jsonify({
+        'success': True,
+        'message': 'Logged out successfully',
+        'redirect': 'http://localhost:3000/login'
+    })
+    response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
+
+
+@auth_bp.route('/user_status', methods=['GET', 'OPTIONS'])
+def user_status():
+    if request.method == 'OPTIONS':
+        # Handle preflight request
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+    
+    if current_user.is_authenticated:
+        response = jsonify({
+            'authenticated': True,
+            'user': {
+                'id': current_user.id,
+                'username': current_user.user_name,
+                'role': current_user.role
+            }
+        })
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
+    else:
+        response = jsonify({'authenticated': False})
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response
