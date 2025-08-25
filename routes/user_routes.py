@@ -7,18 +7,8 @@ from datetime import datetime
 
 user_bp = Blueprint('user', __name__)
 
-@user_bp.route('/users')
-@login_required
-def index():
-    if current_user.role != 'admin':
-        flash('You do not have permission to view this page', 'danger')
-        return redirect(url_for('reservation.dashboard'))
-    
-    users = User.query.all()
-    return render_template('users.html', users=users)
 
 @user_bp.route('/users/add', methods=['POST'])
-@login_required
 def add():
     if current_user.role != 'admin':
         return jsonify({'error': 'You do not have permission to perform this action'}), 403
@@ -58,7 +48,6 @@ def add():
         return jsonify({'error': f'Error adding user: {str(e)}'}), 500
 
 @user_bp.route('/users/edit/<int:user_id>')
-@login_required
 def edit(user_id):
     # For AJAX requests
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -86,7 +75,6 @@ def edit(user_id):
 
 
 @user_bp.route('/users/update/<int:user_id>', methods=['POST'])
-@login_required
 def update(user_id):
     user = User.query.get_or_404(user_id)
     
@@ -121,7 +109,6 @@ def update(user_id):
         return jsonify({'error': f'Error updating user: {str(e)}'}), 500
 
 @user_bp.route('/users/delete/<int:user_id>', methods=['POST'])
-@login_required
 def delete(user_id):
     if current_user.role != 'admin':
         return jsonify({'error': 'You do not have permission to perform this action'}), 403
@@ -135,7 +122,6 @@ def delete(user_id):
         return jsonify({'error': f'Error deleting user: {str(e)}'}), 500
 
 @user_bp.route('/api/users')
-@login_required
 def api_users():
     if current_user.role != 'admin':
         return jsonify({'error': 'You do not have permission to view this data'}), 403
