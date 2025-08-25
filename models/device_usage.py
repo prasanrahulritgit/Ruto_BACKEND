@@ -7,7 +7,7 @@ class DeviceUsage(db.Model):
     __tablename__ = 'device_usage_history'
     
     id = db.Column(db.Integer, primary_key=True)
-    device_id = db.Column(db.String(50), db.ForeignKey('devices.device_id'), nullable=False)
+    device_id = db.Column(db.String(50), db.ForeignKey('devices.device_id', ondelete='CASCADE'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     reservation_id = db.Column(db.Integer, db.ForeignKey('reservations.id'), nullable=True)
     
