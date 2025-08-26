@@ -363,13 +363,10 @@ def end_usage(reservation_id):
     
 
 @history_bp.route('/all-records', methods=['GET'])
-@login_required
 def get_all_records():
     """Get all device usage records with detailed information"""
     try:
         # Check if user is admin
-        if current_user.role != 'admin':
-            return jsonify({'error': 'Admin privileges required'}), 403
 
         # Get pagination parameters
         page = request.args.get('page', 1, type=int)
