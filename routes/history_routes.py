@@ -125,7 +125,6 @@ def delete_usage_record(record_id):
 
 
 @history_bp.route('/get-usage-record/<int:record_id>', methods=['GET'])
-@login_required
 def get_usage_record_details(record_id):
     try:
         # Eager load all relationships
@@ -211,7 +210,6 @@ def usage_record(record_id):
             'record': {
                 'id': record.id,
                 'device_id': record.device_id,
-                'device_name': record.device.device_name if record.device else None,
                 'user_id': record.user_id,
                 'user_name': record.user.name if record.user else None,
                 'reservation_id': record.reservation_id,
@@ -229,55 +227,6 @@ def usage_record(record_id):
     except Exception as e:
         current_app.logger.error(f"Error in usage_record endpoint: {str(e)}")
         return jsonify({'message': 'Server error processing request'}), 500
-
-'''@history_bp.route('/<int:record_id>', methods=['GET', 'DELETE'])
-@login_required
-def usage_record(record_id):
-    """Handle both GET and DELETE requests for usage records"""
-    record = DeviceUsage.query.get_or_404(record_id)
-    
-    if request.method == 'DELETE':
-        # Check if user is admin or owns the record
-        if current_user.role != 'admin' and current_user.id != record.user_id:
-            return jsonify({'message': 'Permission denied'}), 403
-        
-        try:
-            # If the usage is still active, set end time first
-            if record.status == 'active' and not record.actual_end_time:
-                ist = pytz.timezone('Asia/Kolkata')
-                record.actual_end_time = datetime.now(ist)
-                record.status = 'completed'
-                record.termination_reason = 'Deleted by user'
-                db.session.commit()
-            
-            # Now delete the record
-            db.session.delete(record)
-            db.session.commit()
-            return jsonify({'message': 'Record deleted successfully'}), 200
-        except Exception as e:
-            db.session.rollback()
-            current_app.logger.error(f"Error deleting record: {str(e)}")
-            return jsonify({'message': 'Failed to delete record'}), 500
-    
-    # Handle GET request (your existing code)
-    return jsonify({
-        'record': {
-            'id': record.id,
-            'device_id': record.device_id,
-            'device_name': record.device.device_name if record.device else None,
-            'user_id': record.user_id,
-            'user_name': record.user.name if record.user else None,
-            'reservation_id': record.reservation_id,
-            'start_time': record.actual_start_time.isoformat() if record.actual_start_time else None,
-            'end_time': record.actual_end_time.isoformat() if record.actual_end_time else None,
-            'status': record.status,
-            'ip_address': record.ip_address,
-            'ip_type': record.ip_type,
-            'duration': record.duration,
-            'duration_formatted': format_duration(record.duration),
-            'termination_reason': record.termination_reason
-        }
-    })'''
 
 
 @history_bp.route('/clear-old', methods=['POST'])
@@ -317,7 +266,6 @@ def get_active_sessions():
         'sessions': [{
             'id': s.id,
             'device_id': s.device_id,
-            'device_name': s.device.device_name if s.device else None,
             'user_id': s.user_id,
             'user_name': s.user.name if s.user else None,
             'start_time': s.actual_start_time.isoformat() if s.actual_start_time else None,
@@ -412,3 +360,91 @@ def end_usage(reservation_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+    
+
+@history_bp.route('/all-records', methods=['GET'])
+@login_required
+def get_all_records():
+    """Get all device usage records with detailed information"""
+    try:
+        # Check if user is admin
+        if current_user.role != 'admin':
+            return jsonify({'error': 'Admin privileges required'}), 403
+
+        # Get pagination parameters
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+        status_filter = request.args.get('status')
+        device_filter = request.args.get('device_id', type=int)
+        user_filter = request.args.get('user_id', type=int)
+        
+        # Build query with filters
+        query = DeviceUsage.query.options(
+            db.joinedload(DeviceUsage.device),
+            db.joinedload(DeviceUsage.user),
+            db.joinedload(DeviceUsage.reservation)
+        ).order_by(DeviceUsage.actual_start_time.desc())
+        
+        # Apply filters
+        if status_filter and status_filter != 'all':
+            query = query.filter(DeviceUsage.status == status_filter)
+        if device_filter:
+            query = query.filter(DeviceUsage.device_id == device_filter)
+        if user_filter:
+            query = query.filter(DeviceUsage.user_id == user_filter)
+        
+        # Paginate results
+        paginated_records = query.paginate(
+            page=page, 
+            per_page=per_page, 
+            error_out=False
+        )
+        
+        # Format the response
+        records_data = []
+        for record in paginated_records.items:
+            record_data = {
+                'id': record.id,
+                'device': {
+                    'id': record.device_id,
+                },
+                'user': {
+                    'id': record.user_id,
+                },
+                'reservation': {
+                    'id': record.reservation_id,
+                },
+                'timing': {
+                    'start_time': record.actual_start_time.isoformat() if record.actual_start_time else None,
+                    'end_time': record.actual_end_time.isoformat() if record.actual_end_time else None,
+                    'duration_seconds': record.duration,
+                    'duration_formatted': format_duration(record.duration)
+                },
+                'status': record.status,
+                'termination_reason': record.termination_reason,
+            }
+            records_data.append(record_data)
+        
+        # Return paginated response
+        return jsonify({
+            'records': records_data,
+            'pagination': {
+                'total': paginated_records.total,
+                'pages': paginated_records.pages,
+                'current_page': page,
+                'per_page': per_page,
+                'has_next': paginated_records.has_next,
+                'has_prev': paginated_records.has_prev
+            },
+            'filters': {
+                'status': status_filter,
+                'device_id': device_filter,
+                'user_id': user_filter
+            }
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f"Error fetching all records: {str(e)}", exc_info=True)
+        return jsonify({'error': 'Failed to fetch records'}), 500
+    
+    
