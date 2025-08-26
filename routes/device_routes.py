@@ -10,17 +10,9 @@ from datetime import datetime, timedelta
 
 device_bp = Blueprint('device', __name__)
 
-@device_bp.route('/')
-@login_required
-def index():
-    if current_user.role != 'admin':
-        return redirect(url_for('reservation.dashboard'))
-    devices = Device.query.all()
-    return render_template('devices.html', devices=devices)
 
 
 @device_bp.route('/api/devices/<device_id>/drivers', methods=['GET'])
-@login_required
 def get_device_drivers(device_id):
     try:
         device = db.session.query(Device).filter_by(device_id=device_id).first()
@@ -132,8 +124,8 @@ def get_devices_with_status():
     
     
 
+
 @device_bp.route('/api/devices', methods=['GET'])
-@login_required
 def get_devices():
     """Get all devices with their availability status"""
     try:
@@ -144,9 +136,9 @@ def get_devices():
         # Get all devices
         devices = Device.query.all()
         
-        # Get all active reservations
+        # Get all active reservations - make sure to handle timezone properly
         reservations = Reservation.query.filter(
-            Reservation.end_time >= current_time.replace(tzinfo=None)
+            Reservation.end_time >= current_time
         ).all()
         
         # Prepare response
@@ -155,7 +147,7 @@ def get_devices():
             # Check if device is currently booked
             is_booked = any(
                 reservation.device_id == device.device_id and
-                reservation.start_time <= current_time.replace(tzinfo=None) <= reservation.end_time
+                reservation.start_time <= current_time <= reservation.end_time
                 for reservation in reservations
             )
             
@@ -178,12 +170,10 @@ def get_devices():
         current_app.logger.error(f"Error getting devices: {str(e)}")
         return jsonify({
             'success': False,
-            'message': 'Failed to get devices'
+            'message': f'Failed to get devices: {str(e)}'  # More detailed error
         }), 500
 
-
 @device_bp.route('/api/devices/<device_id>', methods=['GET'])
-@login_required
 def get_device(device_id):  
     device = Device.query.get_or_404(device_id)
     return jsonify({
@@ -194,8 +184,7 @@ def get_device(device_id):
         'CT1_ip': device.CT1_ip,
     })
 
-@device_bp.route('/add', methods=['POST'])
-@login_required
+@device_bp.route('/api/devices/add', methods=['POST'])
 def add():
     if current_user.role != 'admin':
         flash('You do not have permission to perform this action', 'danger')
@@ -248,8 +237,7 @@ def add():
             'message': f'Error adding device: {str(e)}'
         }), 500
 
-@device_bp.route('/edit/<device_id>', methods=['GET', 'POST'])
-@login_required
+@device_bp.route('/edit/<device_id>', methods=['GET', 'POST','PUT'])
 def edit(device_id):
     if current_user.role != 'admin':
         return jsonify({'error': 'Unauthorized'}), 403
@@ -284,29 +272,58 @@ def edit(device_id):
             'message': f'Error updating device: {str(e)}'
         }), 400
 
-@device_bp.route('/delete/<device_id>', methods=['POST'])
+@device_bp.route('/delete/<device_id>', methods=['POST', 'DELETE'])
 @login_required
 def delete(device_id):
-    if current_user.role != 'admin':
-        return jsonify({'error': 'Unauthorized'}), 403
+    if not current_user.is_authenticated or current_user.role != 'admin':
+        return jsonify({
+            'status': 'error',
+            'message': 'Unauthorized: Admin access required'
+        }), 403
     
-    device = Device.query.get_or_404(device_id)
     try:
+        device = db.session.get(Device, device_id)
+        if not device:
+            return jsonify({
+                'status': 'error',
+                'message': f'Device {device_id} not found'
+            }), 404
+        
+        # Check for active reservations
+        from models.reservation import Reservation
+        active_reservations = db.session.query(Reservation).filter(
+            Reservation.device_id == device_id,
+            Reservation.end_time > datetime.now()
+        ).count()
+        
+        if active_reservations > 0:
+            return jsonify({
+                'status': 'error',
+                'message': f'Cannot delete device {device_id}. It has {active_reservations} active/future reservations.'
+            }), 400
+        
+        # Manually delete DeviceUsage records first
+        from models.device_usage import DeviceUsage
+        DeviceUsage.query.filter_by(device_id=device_id).delete()
+        
+        # Then delete the device
         db.session.delete(device)
         db.session.commit()
+        
         return jsonify({
             'status': 'success',
-            'message': 'Device deleted successfully!'
+            'message': f'Device {device_id} deleted successfully!'
         })
+        
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"Error deleting device {device_id}: {str(e)}", exc_info=True)
         return jsonify({
             'status': 'error',
             'message': f'Error deleting device: {str(e)}'
         }), 400
 
 @device_bp.route('/view_ips/<device_id>', methods=['GET'])
-@login_required
 def view_ips(device_id):
     if current_user.role != 'admin':
         return jsonify({'error': 'Unauthorized'}), 403
@@ -321,7 +338,6 @@ def view_ips(device_id):
     })
 
 @device_bp.route('/api/devices/<string:device_id>/<string:ip_type>', methods=['GET'])
-@login_required
 def get_single_device_ip(device_id, ip_type):
     """Get specific IP address for a device by device ID and IP type
     
