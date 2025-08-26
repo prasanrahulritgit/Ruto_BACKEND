@@ -208,9 +208,6 @@ def get_booked_devices():
         ist = pytz.timezone('Asia/Kolkata')
         current_time_ist = datetime.now(ist)
        
-        # Get query parameters for filtering
-        device_id = request.args.get('device_id')
-        user_id = request.args.get('user_id')
         show_expired = request.args.get('show_expired', 'false').lower() == 'true'
         show_upcoming = request.args.get('show_upcoming', 'true').lower() == 'true'
         show_active = request.args.get('show_active', 'true').lower() == 'true'
@@ -280,6 +277,7 @@ def get_booked_devices():
                 'device': device_info,
                 'user': {
                     'id': user.id,
+                    'username' : user.user_name,
                     'role': current_user.role if current_user.is_authenticated else None
                 },
                 'time': {
@@ -295,18 +293,7 @@ def get_booked_devices():
         response = {
             'success': True,
             'data': {
-                'booked_devices': booked_devices,
-                'meta': {
-                'count': len(booked_devices),
-                'current_time': current_time_ist.isoformat(),
-                'filters': {
-                    'device_id': device_id,
-                    'user_id': user_id,
-                    'show_expired': show_expired,
-                    'show_upcoming': show_upcoming,
-                    'show_active': show_active
-                }
-            }
+                'booked_devices': booked_devices
         }
     }
  

@@ -363,7 +363,6 @@ def end_usage(reservation_id):
     
 
 @history_bp.route('/all-records', methods=['GET'])
-@login_required
 def get_all_records():
     """Get all device usage records with detailed information"""
     try:
