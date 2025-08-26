@@ -278,7 +278,7 @@ def get_booked_devices():
                 'user': {
                     'id': user.id,
                     'username' : user.user_name,
-                    'role': current_user.role if current_user.is_authenticated else None
+                    'role': user.role
                 },
                 'time': {
                     'start': start_ist.isoformat(),
