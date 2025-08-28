@@ -40,6 +40,8 @@ def get_devices_with_availability():
         start_time_str = request.args.get('start_time')
         end_time_str = request.args.get('end_time')
         
+        current_app.logger.info(f"Received availability request - start: {start_time_str}, end: {end_time_str}")
+        
         if not start_time_str or not end_time_str:
             return jsonify({
                 'success': False,
@@ -47,20 +49,79 @@ def get_devices_with_availability():
             }), 400
             
         ist = pytz.timezone('Asia/Kolkata')
-        start_time = datetime.fromisoformat(start_time_str).astimezone(ist)
-        end_time = datetime.fromisoformat(end_time_str).astimezone(ist)
+        
+        # Debug: Log the raw strings
+        current_app.logger.info(f"Raw start_time: {start_time_str}")
+        current_app.logger.info(f"Raw end_time: {end_time_str}")
+        
+        try:
+            # Try parsing as ISO format first (with T or space)
+            if 'T' in start_time_str:
+                start_time = datetime.fromisoformat(start_time_str)
+            else:
+                # Replace space with T for ISO format
+                start_time = datetime.fromisoformat(start_time_str.replace(' ', 'T'))
+                
+            if 'T' in end_time_str:
+                end_time = datetime.fromisoformat(end_time_str)
+            else:
+                end_time = datetime.fromisoformat(end_time_str.replace(' ', 'T'))
+                
+        except ValueError as e:
+            current_app.logger.error(f"ISO parsing failed: {str(e)}")
+            # Fallback to custom parsing
+            try:
+                start_time = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M')
+                end_time = datetime.strptime(end_time_str, '%Y-%m-%d %H:%M')
+            except ValueError as e2:
+                current_app.logger.error(f"Custom parsing also failed: {str(e2)}")
+                raise ValueError(f"Invalid datetime format: {start_time_str} or {end_time_str}")
+        
+        # Localize to IST if not already timezone-aware
+        if start_time.tzinfo is None:
+            start_time = ist.localize(start_time)
+        else:
+            start_time = start_time.astimezone(ist)
+            
+        if end_time.tzinfo is None:
+            end_time = ist.localize(end_time)
+        else:
+            end_time = end_time.astimezone(ist)
+        
+        current_app.logger.info(f"Parsed times - Start: {start_time}, End: {end_time}")
+        
+        # Get current time in IST for validation
+        current_time_ist = datetime.now(ist)
+        
+        # Validate times
+        if start_time < current_time_ist:
+            return jsonify({
+                'success': False,
+                'message': 'Start time cannot be in the past'
+            }), 400
+            
+        if end_time <= start_time:
+            return jsonify({
+                'success': False,
+                'message': 'End time must be after start time'
+            }), 400
         
         # Get all devices
         devices = Device.query.all()
+        current_app.logger.info(f"Found {len(devices)} devices in database")
         
-        # Get conflicting reservations
+        # Get conflicting reservations (compare naive datetimes)
         conflicting_reservations = Reservation.query.filter(
             Reservation.start_time < end_time.replace(tzinfo=None),
-            Reservation.end_time > start_time.replace(tzinfo=None)
+            Reservation.end_time > start_time.replace(tzinfo=None),
+            Reservation.status != 'cancelled'
         ).all()
+        
+        current_app.logger.info(f"Found {len(conflicting_reservations)} conflicting reservations")
         
         # Create a set of booked device IDs
         booked_device_ids = {res.device_id for res in conflicting_reservations}
+        current_app.logger.info(f"Booked device IDs: {booked_device_ids}")
         
         # Prepare response
         device_list = []
@@ -75,23 +136,30 @@ def get_devices_with_availability():
                 'ct1_ip': device.CT1_ip
             })
         
+        current_app.logger.info(f"Returning {len(device_list)} devices with availability status")
+        
         return jsonify({
             'success': True,
             'devices': device_list,
             'meta': {
                 'start_time': start_time.isoformat(),
-                'end_time': end_time.isoformat()
+                'end_time': end_time.isoformat(),
+                'timezone': 'Asia/Kolkata'
             }
         })
         
-    except Exception as e:
-        current_app.logger.error(f"Error checking device availability: {str(e)}")
+    except ValueError as e:
+        current_app.logger.error(f"Invalid datetime format: {str(e)}")
         return jsonify({
             'success': False,
-            'message': 'Failed to check device availability'
+            'message': f'Invalid datetime format: {str(e)}. Please use YYYY-MM-DD HH:MM format'
+        }), 400
+    except Exception as e:
+        current_app.logger.error(f"Error checking device availability: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'Failed to check device availability: {str(e)}'
         }), 500
-
-
 
 
 @reservation_bp.route('/dashboard')
