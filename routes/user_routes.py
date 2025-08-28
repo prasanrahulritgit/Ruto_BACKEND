@@ -46,32 +46,72 @@ def add():
         })
     except Exception as e:
         return jsonify({'error': f'Error adding user: {str(e)}'}), 500
+    
 
-@user_bp.route('/users/edit/<int:user_id>')
-def edit(user_id):
-    # For AJAX requests
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        user = User.query.get_or_404(user_id)
+@user_bp.route('/users/get/<int:user_id>', methods=['GET'])
+@login_required
+def get_user(user_id):
+    if current_user.role != 'admin':
+        return jsonify({'error': 'You do not have permission to view this user'}), 403
         
-        # Check permissions - admin or user editing their own account
-        if current_user.role != 'admin' and current_user.id != user_id:
-            return jsonify({'error': 'You do not have permission to view this user'}), 403
-            
+    try:
+        user = User.query.get_or_404(user_id)
         return jsonify({
             'id': user.id,
             'user_name': user.user_name,
             'user_ip': user.user_ip or '',
-            'role': user.role,
-            'is_admin': current_user.role == 'admin'  # Frontend can use this to show/hide role field
+            'role': user.role
         })
-    
-    # For regular requests (fallback)
+    except Exception as e:
+        return jsonify({'error': f'Error fetching user: {str(e)}'}), 500
+
+@user_bp.route('/users/edit/<int:user_id>', methods=['POST'])
+@login_required
+def edit_user(user_id):
     if current_user.role != 'admin':
-        flash('You do not have permission to perform this action', 'danger')
-        return redirect(url_for('reservation.dashboard'))
+        return jsonify({'error': 'You do not have permission to perform this action'}), 403
     
-    user = User.query.get_or_404(user_id)
-    return render_template('edit_user.html', user=user)
+    try:
+        user = User.query.get_or_404(user_id)
+        
+        # Get form data
+        user_name = request.form.get('user_name')
+        user_ip = request.form.get('user_ip', '')
+        role = request.form.get('role')
+        password = request.form.get('password', '')
+        
+        # Validate required fields
+        if not user_name:
+            return jsonify({'error': 'Username is required'}), 400
+        
+        # Update user data
+        user.user_name = user_name
+        user.user_ip = user_ip if user_ip else None
+        
+        # Update password if provided
+        if password:
+            # Assuming you have a password hashing method
+            user.set_password(password)
+        
+        # Only allow role change if current user is admin
+        if role and role in ['user', 'admin']:
+            user.role = role
+        
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'User updated successfully!',
+            'user': {
+                'id': user.id,
+                'user_name': user.user_name,
+                'user_ip': user.user_ip,
+                'role': user.role
+            }
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Error updating user: {str(e)}'}), 500
 
 
 @user_bp.route('/users/update/<int:user_id>', methods=['POST'])
@@ -133,3 +173,15 @@ def api_users():
         'user_ip': user.user_ip,
         'role': user.role
     } for user in users])
+
+
+@user_bp.route('/api/current-user', methods=['GET'])
+@login_required
+def get_current_user():
+    return jsonify({
+        'id': current_user.id,
+        'user_name': current_user.user_name,
+        'user_ip': current_user.user_ip or '',
+        'role': current_user.role,
+        'is_authenticated': True
+    })
