@@ -160,8 +160,7 @@ def get_devices_with_availability():
             'success': False,
             'message': f'Failed to check device availability: {str(e)}'
         }), 500
-
-
+ 
 @reservation_bp.route('/dashboard')
 def dashboard():
     # Delete ALL expired reservations (not just current user's)
@@ -345,7 +344,7 @@ def get_booked_devices():
                 'device': device_info,
                 'user': {
                     'id': user.id,
-                    'username' : user.user_name,
+                    'user_name': getattr(reservation.user, 'user_name', None),
                     'role': user.role
                 },
                 'time': {
@@ -376,6 +375,9 @@ def get_booked_devices():
             'message': 'Failed to fetch booked devices',
             'error': str(e)
         }), 500
+   
+ 
+ 
     
 
 @reservation_bp.route('/api/reservations', methods=['GET'])
@@ -601,7 +603,8 @@ def create_reservation():
                 'device': device_info,
                 'user': {
                     'id': current_user.id,
-                    'name': current_user.user_name
+                    'name': current_user.user_name,
+                    'role': current_user.role
                 },
                 'time': {
                     'start': start_ist.isoformat(),
