@@ -414,10 +414,10 @@ def get_all_records():
                     'id': record.reservation_id,
                 },
                 'timing': {
-                    'start_time': record.actual_start_time.isoformat() if record.actual_start_time else None,
-                    'end_time': record.actual_end_time.isoformat() if record.actual_end_time else None,
-                    'duration_seconds': record.duration,
-                    'duration_formatted': format_duration(record.duration)
+            'start_time': record.actual_start_time.isoformat() if record.actual_start_time else None,
+            'end_time': record.actual_end_time.isoformat() if record.actual_end_time else None,
+            'duration_seconds': calculate_actual_duration(record.actual_start_time, record.actual_end_time),
+            'duration_formatted': format_duration(calculate_actual_duration(record.actual_start_time, record.actual_end_time))
                 },
                 'status': record.status,
                 'termination_reason': record.termination_reason,
@@ -447,3 +447,7 @@ def get_all_records():
         return jsonify({'error': 'Failed to fetch records'}), 500
     
     
+def calculate_actual_duration(start_time, end_time):
+    if start_time and end_time:
+        return (end_time - start_time).total_seconds()
+    return 0
