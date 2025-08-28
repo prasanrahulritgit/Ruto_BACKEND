@@ -65,15 +65,25 @@ def get_user(user_id):
     except Exception as e:
         return jsonify({'error': f'Error fetching user: {str(e)}'}), 500
 
-@user_bp.route('/users/edit/<int:user_id>', methods=['POST'])
+@user_bp.route('/users/edit/<int:user_id>', methods=['GET', 'POST'])  # Add GET here
 @login_required
 def edit_user(user_id):
-    if current_user.role != 'admin':
+    if current_user.role != 'admin' and current_user.id != user_id:
         return jsonify({'error': 'You do not have permission to perform this action'}), 403
     
+    user = User.query.get_or_404(user_id)
+    
+    if request.method == 'GET':
+        # Handle GET request - return user data for editing
+        return jsonify({
+            'id': user.id,
+            'user_name': user.user_name,
+            'user_ip': user.user_ip or '',
+            'role': user.role
+        })
+    
+    # POST method handling for updates
     try:
-        user = User.query.get_or_404(user_id)
-        
         # Get form data
         user_name = request.form.get('user_name')
         user_ip = request.form.get('user_ip', '')
@@ -90,11 +100,10 @@ def edit_user(user_id):
         
         # Update password if provided
         if password:
-            # Assuming you have a password hashing method
             user.set_password(password)
         
         # Only allow role change if current user is admin
-        if role and role in ['user', 'admin']:
+        if role and role in ['user', 'admin'] and current_user.role == 'admin':
             user.role = role
         
         db.session.commit()
@@ -113,8 +122,7 @@ def edit_user(user_id):
         db.session.rollback()
         return jsonify({'error': f'Error updating user: {str(e)}'}), 500
 
-
-@user_bp.route('/users/update/<int:user_id>', methods=['POST'])
+@user_bp.route('/users/update/<int:user_id>', methods=['GET', 'POST'])  # Add GET here
 def update(user_id):
     user = User.query.get_or_404(user_id)
     
@@ -122,6 +130,16 @@ def update(user_id):
     if current_user.role != 'admin' and current_user.id != user_id:
         return jsonify({'error': 'You do not have permission to perform this action'}), 403
     
+    if request.method == 'GET':
+        # Handle GET request - return user data for editing
+        return jsonify({
+            'id': user.id,
+            'user_name': user.user_name,
+            'user_ip': user.user_ip or '',
+            'role': user.role
+        })
+    
+    # POST method handling remains the same
     try:
         data = request.get_json() or request.form
         user.user_name = data['user_name']

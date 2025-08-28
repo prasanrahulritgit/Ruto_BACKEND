@@ -289,13 +289,15 @@ def get_booked_devices():
                 'status': reservation.status,
                 'purpose': reservation.purpose or ''
             })
-       
+
+            
+        
         response = {
             'success': True,
             'data': {
                 'booked_devices': booked_devices
         }
-    }
+    }        
  
         return Response(json.dumps(response, ensure_ascii=False, sort_keys=False), mimetype='application/json')
        
