@@ -510,7 +510,7 @@ function updateDeviceDisplay() {
 
             try {
                 const csrfToken = document.querySelector('input[name="csrf_token"]').value;
-                const response = await fetch(`/reservation/cancel/${reservationId}`, {
+                const response = await fetch(`/api/reservation/cancel/${reservationId}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

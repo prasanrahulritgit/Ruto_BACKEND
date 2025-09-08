@@ -36,7 +36,7 @@ def create_app():
     
     # Configure CORS
     CORS(app, 
-     origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://127.0.0.1:5000"],
+     origins=["http://51.21.52.229", "http://localhost:3000", "http://127.0.0.1:3000", "http://127.0.0.1:5000"],
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])

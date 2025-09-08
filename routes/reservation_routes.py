@@ -630,7 +630,7 @@ def create_reservation():
         }), 500
 
 
-@reservation_bp.route('/reservation/cancel/<int:reservation_id>', methods=['POST'])
+@reservation_bp.route('/api/reservation/cancel/<int:reservation_id>', methods=['POST'])
 def cancel_reservation(reservation_id):
     reservation = Reservation.query.get_or_404(reservation_id)
     
