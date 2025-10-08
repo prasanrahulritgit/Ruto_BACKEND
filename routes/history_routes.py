@@ -366,7 +366,6 @@ def end_usage(reservation_id):
 def get_all_records():
     """Get all device usage records with detailed information"""
     try:
-        # Check if user is admin
 
         # Get pagination parameters
         page = request.args.get('page', 1, type=int)
@@ -412,10 +411,10 @@ def get_all_records():
                     'id': record.reservation_id,
                 },
                 'timing': {
-                    'start_time': record.actual_start_time.isoformat() if record.actual_start_time else None,
-                    'end_time': record.actual_end_time.isoformat() if record.actual_end_time else None,
-                    'duration_seconds': record.duration,
-                    'duration_formatted': format_duration(record.duration)
+            'start_time': record.actual_start_time.isoformat() if record.actual_start_time else None,
+            'end_time': record.actual_end_time.isoformat() if record.actual_end_time else None,
+            'duration_seconds': calculate_actual_duration(record.actual_start_time, record.actual_end_time),
+            'duration_formatted': format_duration(calculate_actual_duration(record.actual_start_time, record.actual_end_time))
                 },
                 'status': record.status,
                 'termination_reason': record.termination_reason,
@@ -445,3 +444,7 @@ def get_all_records():
         return jsonify({'error': 'Failed to fetch records'}), 500
     
     
+def calculate_actual_duration(start_time, end_time):
+    if start_time and end_time:
+        return (end_time - start_time).total_seconds()
+    return 0

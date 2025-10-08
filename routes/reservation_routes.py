@@ -160,7 +160,8 @@ def get_devices_with_availability():
             'success': False,
             'message': f'Failed to check device availability: {str(e)}'
         }), 500
- 
+    
+     
 @reservation_bp.route('/dashboard')
 def dashboard():
     # Delete ALL expired reservations (not just current user's)
